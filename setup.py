@@ -5,7 +5,7 @@ exec(open('denoising_diffusion_pytorch/version.py').read())
 setup(
   name = 'denoising-diffusion-pytorch',
   packages = find_packages(),
-  version = __version__,
+  version = __version__,  # type: ignore
   license='MIT',
   description = 'Denoising Diffusion Probabilistic Models - Pytorch',
   author = 'Phil Wang',

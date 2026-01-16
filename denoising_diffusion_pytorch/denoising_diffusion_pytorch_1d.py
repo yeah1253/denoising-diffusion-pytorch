@@ -1,4 +1,5 @@
 import math
+import sys
 from pathlib import Path
 from random import random
 from functools import partial
@@ -803,8 +804,9 @@ class Trainer1D(object):
         self.train_num_steps = train_num_steps
 
         # dataset and dataloader
-
-        dl = DataLoader(dataset, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
+        # On Windows, use num_workers=0 to avoid multiprocessing issues
+        num_workers = 0 if sys.platform == 'win32' else cpu_count()
+        dl = DataLoader(dataset, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = num_workers)
 
         dl = self.accelerator.prepare(dl)
         self.dl = cycle(dl)
