@@ -17,6 +17,7 @@ FS = 5000  # Hz
 START_IDX = 1000
 END_IDX = 5000
 NUM_PEAKS = 10  # 提取的主要频率峰值数量
+FFT_SIZE_MULTIPLIER = 4  # FFT零填充倍数，增加频率分辨率（推荐4-16）
 
 # 辅助函数：从结构体中提取最大的向量
 def get_largest_vector(data_dict):
@@ -30,7 +31,7 @@ def get_largest_vector(data_dict):
         raise ValueError('无法在真实数据中找到有效数值向量')
     return vec
 
-def extract_dominant_frequencies(signal, fs, num_peaks=10, min_peak_height=None):
+def extract_dominant_frequencies(signal, fs, num_peaks=10, min_peak_height=None, fft_size_multiplier=8):
     """
     从信号中提取主要频率分量
     
@@ -44,6 +45,8 @@ def extract_dominant_frequencies(signal, fs, num_peaks=10, min_peak_height=None)
         提取的峰值数量
     min_peak_height : float, optional
         峰值最小高度（相对最大值）
+    fft_size_multiplier : int
+        FFT零填充倍数，增加频率分辨率
     
     Returns:
     --------
@@ -52,11 +55,16 @@ def extract_dominant_frequencies(signal, fs, num_peaks=10, min_peak_height=None)
     magnitudes : array
         对应的幅值
     """
-    # FFT
-    N = 2 ** int(np.ceil(np.log2(len(signal))))
+    # FFT - 使用零填充增加频率分辨率
+    signal_len = len(signal)
+    # 基础FFT点数（2的幂次）
+    base_fft_size = 2 ** int(np.ceil(np.log2(signal_len)))
+    # 零填充后的FFT点数
+    N = base_fft_size * fft_size_multiplier
+    
     Y = fft(signal, N)
     f_vec = fs * np.arange(N // 2 + 1) / N
-    P = np.abs(Y[:N // 2 + 1]) / len(signal)
+    P = np.abs(Y[:N // 2 + 1]) / signal_len  # 归一化使用原始信号长度
     
     # 去除直流分量
     P[0] = 0
@@ -87,7 +95,7 @@ def extract_dominant_frequencies(signal, fs, num_peaks=10, min_peak_height=None)
     
     return frequencies, magnitudes
 
-def calculate_vf(real_signal, generated_signals, fs, num_peaks=10):
+def calculate_vf(real_signal, generated_signals, fs, num_peaks=10, fft_size_multiplier=8):
     """
     计算 Variance Frequency (VF) 指标
     
@@ -113,7 +121,7 @@ def calculate_vf(real_signal, generated_signals, fs, num_peaks=10):
     """
     # 从真实信号中提取目标频率 f̂_p
     target_freqs, target_magnitudes = extract_dominant_frequencies(
-        real_signal, fs, num_peaks=num_peaks
+        real_signal, fs, num_peaks=num_peaks, fft_size_multiplier=fft_size_multiplier
     )
     
     if len(target_freqs) == 0:
@@ -130,7 +138,7 @@ def calculate_vf(real_signal, generated_signals, fs, num_peaks=10):
     print(f'\n从 {len(generated_signals)} 个生成信号中提取频率:')
     for i, gen_signal in enumerate(generated_signals):
         gen_freqs, gen_magnitudes = extract_dominant_frequencies(
-            gen_signal, fs, num_peaks=num_peaks
+            gen_signal, fs, num_peaks=num_peaks, fft_size_multiplier=fft_size_multiplier
         )
         gen_freqs_list.append(gen_freqs)
         gen_magnitudes_list.append(gen_magnitudes)
@@ -237,10 +245,23 @@ if __name__ == '__main__':
     generated_signals_sliced = [sig[:comparison_length] for sig in generated_signals]
     
     # 4. 计算VF指标
+    signal_len = len(real_signal_sliced)
+    base_fft_size = 2 ** int(np.ceil(np.log2(signal_len)))
+    actual_fft_size = base_fft_size * FFT_SIZE_MULTIPLIER
+    freq_resolution = FS / actual_fft_size
+    
     print(f'\n[4] 计算 VF 指标 (提取 {NUM_PEAKS} 个主要频率)...')
+    print(f'  FFT配置:')
+    print(f'    - 信号长度: {signal_len} 点')
+    print(f'    - 基础FFT点数: {base_fft_size}')
+    print(f'    - 零填充后FFT点数: {actual_fft_size} (倍数: {FFT_SIZE_MULTIPLIER}x)')
+    print(f'    - 频率分辨率: {freq_resolution:.4f} Hz')
+    print(f'    - 最大观测频率: {FS/2:.1f} Hz')
+    
     try:
         vf_value, target_freqs, gen_freqs_list, gen_magnitudes_list = calculate_vf(
-            real_signal_sliced, generated_signals_sliced, FS, num_peaks=NUM_PEAKS
+            real_signal_sliced, generated_signals_sliced, FS, 
+            num_peaks=NUM_PEAKS, fft_size_multiplier=FFT_SIZE_MULTIPLIER
         )
 
         print('\n' + '=' * 70)
@@ -264,10 +285,13 @@ if __name__ == '__main__':
     
     # 子图1: 真实信号的频谱
     ax1 = plt.subplot(3, 2, 1)
-    N = 2 ** int(np.ceil(np.log2(len(real_signal_sliced))))
+    # 使用相同的FFT配置
+    signal_len = len(real_signal_sliced)
+    base_fft_size = 2 ** int(np.ceil(np.log2(signal_len)))
+    N = base_fft_size * FFT_SIZE_MULTIPLIER
     Y_real = fft(real_signal_sliced, N)
     f_vec = FS * np.arange(N // 2 + 1) / N
-    P_real = np.abs(Y_real[:N // 2 + 1]) / len(real_signal_sliced)
+    P_real = np.abs(Y_real[:N // 2 + 1]) / signal_len
     P_real[0] = 0
     
     ax1.plot(f_vec, P_real, 'b-', linewidth=1, label='Real Signal')
@@ -289,11 +313,18 @@ if __name__ == '__main__':
             break
         
         ax = plt.subplot(3, 2, idx + 2)
-        Y_gen = fft(gen_signal, N)
-        P_gen = np.abs(Y_gen[:N // 2 + 1]) / len(gen_signal)
+        # 使用相同的FFT配置
+        gen_signal_len = len(gen_signal)
+        gen_base_fft_size = 2 ** int(np.ceil(np.log2(gen_signal_len)))
+        gen_N = gen_base_fft_size * FFT_SIZE_MULTIPLIER
+        Y_gen = fft(gen_signal, gen_N)
+        gen_f_vec = FS * np.arange(gen_N // 2 + 1) / gen_N
+        P_gen = np.abs(Y_gen[:gen_N // 2 + 1]) / gen_signal_len
         P_gen[0] = 0
+        # 使用相同的频率向量
+        gen_f_vec = f_vec  # 使用相同的f_vec确保一致性
         
-        ax.plot(f_vec, P_gen, 'r--', linewidth=1, alpha=0.7, label='Generated')
+        ax.plot(gen_f_vec, P_gen, 'r--', linewidth=1, alpha=0.7, label='Generated')
         ax.plot(f_vec, P_real, 'b-', linewidth=1, alpha=0.5, label='Real')
         
         if len(gen_freqs) > 0:

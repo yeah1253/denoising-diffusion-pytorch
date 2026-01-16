@@ -1,0 +1,2 @@
+1、截取数据，去除前5000个采样点
+2、self.objective = objective（442行） 选择的生成目标

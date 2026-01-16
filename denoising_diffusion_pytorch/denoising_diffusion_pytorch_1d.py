@@ -285,11 +285,11 @@ class Unet1D(Module):
         init_dim = default(init_dim, dim)
         self.init_conv = nn.Conv1d(input_channels, init_dim, 7, padding = 3)
 
+        # 下采样代码(encoder)部分
         dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
 
         # time embeddings
-
         time_dim = dim * 4
 
         self.random_or_learned_sinusoidal_cond = learned_sinusoidal_cond or random_fourier_features
@@ -311,11 +311,11 @@ class Unet1D(Module):
         resnet_block = partial(ResnetBlock, time_emb_dim = time_dim, dropout = dropout)
 
         # layers
-
+        # 结构部分
         self.downs = ModuleList([])
         self.ups = ModuleList([])
         num_resolutions = len(in_out)
-
+        # 下采样代码(encoder)部分
         for ind, (dim_in, dim_out) in enumerate(in_out):
             is_last = ind >= (num_resolutions - 1)
 
@@ -325,12 +325,12 @@ class Unet1D(Module):
                 Residual(PreNorm(dim_in, LinearAttention(dim_in))),
                 Downsample(dim_in, dim_out) if not is_last else nn.Conv1d(dim_in, dim_out, 3, padding = 1)
             ]))
-
+        # 中间层代码部分（使用标准 Attention（非 LinearAttention）捕获全局依赖）
         mid_dim = dims[-1]
         self.mid_block1 = resnet_block(mid_dim, mid_dim)
         self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim, dim_head = attn_dim_head, heads = attn_heads)))
         self.mid_block2 = resnet_block(mid_dim, mid_dim)
-
+        # 上采样代码(decoder)部分
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out)):
             is_last = ind == (len(in_out) - 1)
 
@@ -763,13 +763,13 @@ class Trainer1D(object):
         dataset: Dataset,
         *,
         train_batch_size = 16,
-        gradient_accumulate_every = 1,
+        gradient_accumulate_every = 1,  #梯度累积步数，batch_size=8, gradient_accumulate_every=4 → 等效批大小 32
         train_lr = 1e-4,
         train_num_steps = 100000,
         ema_update_every = 10,
         ema_decay = 0.995,
         adam_betas = (0.9, 0.99),
-        save_and_sample_every = 1000,
+        save_and_sample_every = 1000, #每 N 步保存一次模型并生成样本
         num_samples = 25,
         results_folder = './results',
         amp = False,
